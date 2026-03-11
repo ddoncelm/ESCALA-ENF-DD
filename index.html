@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <!-- SEO y descripción -->
+  <title>EnfescalSol — Escalas de Valoración Enfermera</title>
+  <meta name="description" content="Escalas de valoración de enfermería del Sistema Sanitario Público Andaluz. Barthel, Braden, Norton, Goldberg, Zarit, Morse, MNA, Pfeiffer." />
+  <meta name="keywords" content="enfermería, escalas valoración, Barthel, Braden, Norton, SSPA, Andalucía, atención primaria" />
+  <meta name="author" content="EnfescalSol — HUCS" />
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0077B6" />
+  <meta name="mobile-web-app-capable" content="yes" />
+
+  <!-- Apple iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="EnfescalSol" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+  <link rel="apple-touch-startup-image" href="/icons/icon-512.png" />
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-96.png" />
+  <link rel="shortcut icon" href="/icons/icon-96.png" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="EnfescalSol" />
+  <meta property="og:description" content="Escalas de valoración de enfermería — SSPA Atención Primaria" />
+  <meta property="og:image" content="/icons/icon-512.png" />
+  <meta property="og:type" content="website" />
+
+  <!-- Librerías externas CDN -->
+  <!-- Recharts (React charts) - cargado via React app bundle -->
+
+  <!-- docx.js para exportación Word - UMD bundle -->
+  <script src="https://unpkg.com/docx@9.5.3/build/index.umd.js"></script>
+
+  <!-- JSZip para generar ODT -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"
+    integrity="sha512-XMVd28F1oH/O71fzwBnV7HucLxVwtxf26XV8P4wPk26EDxuGZ91N8bsOttmnomcCD3CS5ZMRL50H0GgOHveXg=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <style>
+    /* Reset y base */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow-x: hidden; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #F0F4F8;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      /* Safe areas para iPhone con notch */
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    #root {
+      min-height: 100vh;
+      max-width: 430px;
+      margin: 0 auto;
+    }
+
+    /* Scrollbar minimalista */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #C8DCE8; border-radius: 4px; }
+
+    /* Impresión */
+    @media print {
+      body { background: white !important; }
+      #root { max-width: 100% !important; }
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      button, .btn { display: none !important; }
+    }
+
+    /* Splash screen mientras carga React */
+    #splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: linear-gradient(145deg, #0077B6 0%, #005A8E 40%, #003459 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: white; transition: opacity 0.4s ease;
+    }
+    #splash.hidden { opacity: 0; pointer-events: none; }
+    #splash .logo { font-size: 3.5rem; margin-bottom: 0.8rem; }
+    #splash h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; }
+    #splash p { font-size: 0.8rem; opacity: 0.7; margin-top: 0.4rem; letter-spacing: 1.5px; text-transform: uppercase; }
+    #splash .loader {
+      margin-top: 2rem; width: 40px; height: 4px;
+      background: rgba(255,255,255,0.2); border-radius: 4px; overflow: hidden;
+    }
+    #splash .loader::after {
+      content: ''; display: block; height: 100%; width: 40%;
+      background: #F77F00; border-radius: 4px;
+      animation: loadbar 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes loadbar { from { transform: translateX(-20px); } to { transform: translateX(60px); } }
+
+    /* Botón instalar PWA */
+    #install-btn {
+      display: none;
+      position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%);
+      background: #0077B6; color: white; border: none; border-radius: 50px;
+      padding: 0.8rem 1.8rem; font-size: 0.9rem; font-weight: 700;
+      cursor: pointer; z-index: 50; box-shadow: 0 4px 20px rgba(0,100,200,0.4);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Splash screen -->
+  <div id="splash">
+    <div class="logo">🌞</div>
+    <h1>EnfescalSol</h1>
+    <p>Escalas de Valoración Enfermera</p>
+    <div class="loader"></div>
+  </div>
+
+  <!-- Botón instalar app -->
+  <button id="install-btn">📲 Instalar EnfescalSol</button>
+
+  <!-- Root React -->
+  <div id="root"></div>
+
+  <!-- Scripts principales -->
+  <!-- En producción Vite/CRA sustituye esto por el bundle compilado -->
+  <!-- Para desarrollo standalone, se carga el JSX transpilado en tiempo real -->
+
+  <script type="module">
+    // ── REGISTRO DEL SERVICE WORKER ────────────────────────────────────────
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', async () => {
+        try {
+          const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+          console.log('[PWA] Service Worker registrado:', reg.scope);
+
+          reg.addEventListener('updatefound', () => {
+            const newSW = reg.installing;
+            newSW?.addEventListener('statechange', () => {
+              if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                // Hay una nueva versión disponible
+                if (confirm('Nueva versión de EnfescalSol disponible. ¿Actualizar ahora?')) {
+                  newSW.postMessage({ type: 'SKIP_WAITING' });
+                  window.location.reload();
+                }
+              }
+            });
+          });
+        } catch (err) {
+          console.warn('[PWA] Error al registrar Service Worker:', err);
+        }
+      });
+    }
+
+    // ── INSTALACIÓN PWA (A2HS) ─────────────────────────────────────────────
+    let deferredPrompt;
+    const installBtn = document.getElementById('install-btn');
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.style.display = 'block';
+    });
+
+    installBtn.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log('[PWA] Instalación:', outcome);
+      deferredPrompt = null;
+      installBtn.style.display = 'none';
+    });
+
+    window.addEventListener('appinstalled', () => {
+      installBtn.style.display = 'none';
+      console.log('[PWA] App instalada correctamente');
+    });
+
+    // ── OCULTAR SPLASH ─────────────────────────────────────────────────────
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        const splash = document.getElementById('splash');
+        splash?.classList.add('hidden');
+        setTimeout(() => splash?.remove(), 400);
+      }, 800);
+    });
+  </script>
+
+  <!-- Entrada React — Vite compila este módulo durante el build -->
+  <script type="module" src="/src/main.jsx"></script>
+
+</body>
+</html>
