@@ -743,7 +743,7 @@ export default function EnfescalSol(){
                 style={{padding:"0.75rem 0.5rem",borderRadius:"10px",border:"2px solid #2D7E31",background:"#EAF5EA",cursor:"pointer",color:"#2D7E31",fontWeight:"700",fontSize:"0.82rem",display:"flex",flexDirection:"column",alignItems:"center",gap:"0.2rem"}}>
                 <span style={{fontSize:"1.3rem"}}>📋</span><span>LibreOffice (.odt)</span>
               </button>
-              <button onClick={()=>{setTimeout(()=>window.print(),200);}}
+              <button onClick={()=>imprimirInforme(p,ESCALAS)}
                 style={{padding:"0.75rem 0.5rem",borderRadius:"10px",border:`2px solid ${C.primary}`,background:C.surfaceAlt,cursor:"pointer",color:C.primary,fontWeight:"700",fontSize:"0.82rem",display:"flex",flexDirection:"column",alignItems:"center",gap:"0.2rem"}}>
                 <span style={{fontSize:"1.3rem"}}>🖨️</span><span>Imprimir / PDF</span>
               </button>
@@ -961,6 +961,369 @@ export default function EnfescalSol(){
     );
   };
 
+
+  // ─── IMPRIMIR INFORME COMPLETO ────────────────────────────────────────────
+  const imprimirInforme = (patient, escalasData) => {
+    const hoy = new Date().toLocaleDateString("es-ES", { day:"2-digit", month:"long", year:"numeric" });
+    const edad = patient.nacimiento ? new Date().getFullYear() - new Date(patient.nacimiento).getFullYear() : null;
+
+    // ── Genera un radar SVG inline sin dependencias externas ─────────────────
+    const radarSVG = (items, colorActual, colorAnterior) => {
+      const size = 200;
+      const cx = size / 2;
+      const cy = size / 2;
+      const r = 72;
+      const n = items.length;
+      if (n === 0) return "";
+
+      const angle = (i) => (Math.PI * 2 * i) / n - Math.PI / 2;
+
+      const polarToXY = (ang, radius) => ({
+        x: cx + radius * Math.cos(ang),
+        y: cy + radius * Math.sin(ang),
+      });
+
+      // Grid rings
+      let gridPaths = "";
+      [25, 50, 75, 100].forEach(pct => {
+        const pts = Array.from({length: n}, (_, i) => {
+          const p = polarToXY(angle(i), r * pct / 100);
+          return `${p.x},${p.y}`;
+        }).join(" ");
+        gridPaths += `<polygon points="${pts}" fill="none" stroke="#ddd" stroke-width="0.8"/>`;
+      });
+
+      // Axis lines
+      let axisLines = "";
+      for (let i = 0; i < n; i++) {
+        const end = polarToXY(angle(i), r);
+        axisLines += `<line x1="${cx}" y1="${cy}" x2="${end.x}" y2="${end.y}" stroke="#ccc" stroke-width="0.8"/>`;
+      }
+
+      // Labels
+      let labels = "";
+      for (let i = 0; i < n; i++) {
+        const labelR = r + 16;
+        const pos = polarToXY(angle(i), labelR);
+        const txt = items[i].label.split(" ").slice(0, 2).join(" ");
+        labels += `<text x="${pos.x}" y="${pos.y}" text-anchor="middle" dominant-baseline="middle" font-size="7" fill="#555" font-family="Arial">${txt}</text>`;
+      }
+
+      // Data polygon helper
+      const dataPolygon = (values, color, opacity, dash = "") => {
+        const pts = values.map((v, i) => {
+          const p = polarToXY(angle(i), r * v / 100);
+          return `${p.x},${p.y}`;
+        }).join(" ");
+        const dots = values.map((v, i) => {
+          const p = polarToXY(angle(i), r * v / 100);
+          return `<circle cx="${p.x}" cy="${p.y}" r="2.5" fill="${color}"/>`;
+        }).join("");
+        return `<polygon points="${pts}" fill="${color}" fill-opacity="${opacity}" stroke="${color}" stroke-width="1.5" stroke-dasharray="${dash}"/>${dots}`;
+      };
+
+      // Build actual/anterior polygons
+      const actualVals = items.map(it => it.actual ?? 0);
+      const anteriorVals = items.map(it => it.anterior ?? null);
+      const hasAnterior = anteriorVals.some(v => v !== null);
+
+      let polygons = dataPolygon(actualVals, colorActual, 0.25);
+      if (hasAnterior) {
+        polygons += dataPolygon(anteriorVals.map(v => v ?? 0), colorAnterior, 0.12, "4 2");
+      }
+
+      // Legend
+      let legend = `<rect x="4" y="${size-14}" width="8" height="3" fill="${colorActual}"/><text x="15" y="${size-11}" font-size="7" fill="#555" font-family="Arial">Última</text>`;
+      if (hasAnterior) {
+        legend += `<rect x="55" y="${size-14}" width="8" height="2" fill="${colorAnterior}" fill-opacity="0.6"/><text x="66" y="${size-11}" font-size="7" fill="#555" font-family="Arial">Anterior</text>`;
+      }
+
+      return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        ${gridPaths}${axisLines}${labels}${polygons}${legend}
+      </svg>`;
+    };
+
+    // ── Genera HTML de una sección de escala ─────────────────────────────────
+    const seccionEscala = (esc, vList) => {
+      if (!vList || vList.length === 0) return "";
+      const last = vList[0];
+      const prev = vList[1];
+      const interp = esc.interpretacion(last.total);
+
+      // Radar items
+      const radarItems = esc.items.map(item => {
+        const maxItem = Math.max(...item.opciones.map(o => o.valor));
+        return {
+          label: item.label.split(" ").slice(0, 2).join(" "),
+          actual: maxItem > 0 ? Math.round(((last.respuestas[item.id] ?? 0) / maxItem) * 100) : 0,
+          anterior: (prev && maxItem > 0) ? Math.round(((prev.respuestas[item.id] ?? 0) / maxItem) * 100) : null,
+        };
+      });
+
+      const svgColor = esc.color;
+      const svg = radarSVG(radarItems, svgColor, "#FFB347");
+
+      // Historial badges
+      const histBadges = vList.slice(0, 5).map((v, i) => {
+        const ip = esc.interpretacion(v.total);
+        return `<div class="badge" style="border-left:3px solid ${i===0?esc.color:ip.color};background:${i===0?esc.color+'18':'#f5f5f5'}">
+          <strong style="color:${i===0?esc.color:'#555'}">${v.total}</strong>
+          <span style="color:${ip.color}">${ip.nivel.split(" ").slice(-1)[0]}</span>
+          <small>${new Date(v.fecha).toLocaleDateString("es-ES")}</small>
+        </div>`;
+      }).join("");
+
+      // Items table
+      const itemRows = esc.items.map((item, ii) => {
+        const rv = last.respuestas[item.id];
+        const op = item.opciones.find(o => o.valor === rv);
+        return `<tr style="background:${ii%2===0?'#f8fbff':'white'}">
+          <td style="padding:4px 8px;font-size:11px;color:#333">${item.label}</td>
+          <td style="padding:4px 8px;font-size:11px;color:#666;text-align:center">${op?.texto || "—"}</td>
+          <td style="padding:4px 8px;font-size:12px;font-weight:bold;color:${esc.color};text-align:center">${rv ?? "—"}</td>
+        </tr>`;
+      }).join("");
+
+      return `
+      <div class="escala-section" style="page-break-inside:avoid">
+        <div class="escala-header" style="background:${esc.color}18;border-left:4px solid ${esc.color};padding:10px 14px;margin-bottom:10px;border-radius:4px">
+          <h3 style="margin:0;color:${esc.color};font-size:14px">${esc.icono} ${esc.nombre}</h3>
+          <p style="margin:3px 0 0;font-size:11px;color:#666">${esc.descripcion}</p>
+        </div>
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:10px">
+          <div style="flex:0 0 200px">${svg}</div>
+          <div style="flex:1">
+            <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+              <div style="flex:1;min-width:100px;background:${esc.color}12;border-radius:8px;padding:8px 10px;border-left:3px solid ${esc.color}">
+                <div style="font-size:10px;color:#888">ÚLTIMA · ${new Date(last.fecha).toLocaleDateString("es-ES")}</div>
+                <div style="font-size:22px;font-weight:800;color:${esc.color};line-height:1">${last.total}</div>
+                <div style="font-size:10px;color:${interp.color};font-weight:700">${interp.nivel}</div>
+              </div>
+              ${prev ? `<div style="flex:1;min-width:100px;background:#f5f5f5;border-radius:8px;padding:8px 10px;border-left:3px solid #ccc">
+                <div style="font-size:10px;color:#888">ANTERIOR · ${new Date(prev.fecha).toLocaleDateString("es-ES")}</div>
+                <div style="font-size:22px;font-weight:800;color:#888;line-height:1">${prev.total}</div>
+                <div style="font-size:10px;color:${esc.interpretacion(prev.total).color};font-weight:700">${esc.interpretacion(prev.total).nivel}</div>
+              </div>` : ""}
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">${histBadges}</div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:16px">
+          <thead>
+            <tr style="background:${esc.color}">
+              <th style="padding:5px 8px;text-align:left;color:white;font-weight:600">Ítem</th>
+              <th style="padding:5px 8px;color:white;font-weight:600;text-align:center">Respuesta</th>
+              <th style="padding:5px 8px;color:white;font-weight:600;text-align:center">Pts.</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}</tbody>
+          <tfoot>
+            <tr style="background:#E8F5EC">
+              <td colspan="2" style="padding:5px 8px;font-weight:700;font-size:12px;color:#007A2E">PUNTUACIÓN TOTAL</td>
+              <td style="padding:5px 8px;font-weight:800;font-size:14px;color:${esc.color};text-align:center">${last.total} / ${esc.maxPuntos}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+    };
+
+    // ── Sección Pie Diabético ─────────────────────────────────────────────────
+    const seccionPie = () => {
+      const entries = patient.pieDiabetico || [];
+      if (entries.length === 0) return "";
+
+      let html = `<div class="escala-section" style="page-break-before:always">
+        <h2 style="color:#B71C1C;border-bottom:2px solid #B71C1C;padding-bottom:6px;margin-bottom:14px">🦶 Valoración Pie Diabético</h2>`;
+
+      for (const sub of PIE_DIABETICO.subformularios) {
+        const hist = entries.filter(e => e.subId === sub.id);
+        if (!hist.length) continue;
+        const last = hist[0]; const prev = hist[1];
+        const interp = sub.interpretacion(last.total);
+
+        const radarItems = sub.items.map(item => {
+          const maxItem = Math.max(...item.opciones.map(o => o.valor));
+          return {
+            label: item.label.split(" ").slice(0, 2).join(" "),
+            actual: maxItem > 0 ? Math.round(((last.respuestas[item.id] ?? 0) / maxItem) * 100) : 0,
+            anterior: (prev && maxItem > 0) ? Math.round(((prev.respuestas[item.id] ?? 0) / maxItem) * 100) : null,
+          };
+        });
+
+        const svg = radarSVG(radarItems, "#B71C1C", "#FFB347");
+
+        const itemRows = sub.items.map((item, ii) => {
+          const rv = last.respuestas[item.id];
+          const op = item.opciones.find(o => o.valor === rv);
+          return `<tr style="background:${ii%2===0?'#fff8f8':'white'}">
+            <td style="padding:4px 8px;font-size:11px;color:#333">${item.label}</td>
+            <td style="padding:4px 8px;font-size:11px;color:#666;text-align:center">${op?.texto || "—"}</td>
+            <td style="padding:4px 8px;font-size:12px;font-weight:bold;color:#B71C1C;text-align:center">${rv ?? "—"}</td>
+          </tr>`;
+        }).join("");
+
+        html += `<div style="page-break-inside:avoid;margin-bottom:20px">
+          <div style="background:#B71C1C18;border-left:4px solid #B71C1C;padding:8px 12px;margin-bottom:10px;border-radius:4px">
+            <h4 style="margin:0;color:#B71C1C;font-size:13px">${sub.icono} ${sub.nombre}</h4>
+            <p style="margin:2px 0 0;font-size:10px;color:#666">${sub.descripcion}</p>
+          </div>
+          <div style="display:flex;gap:14px;align-items:flex-start;margin-bottom:8px">
+            <div style="flex:0 0 200px">${svg}</div>
+            <div style="flex:1">
+              <div style="display:flex;gap:8px;margin-bottom:8px">
+                <div style="flex:1;background:#FFEBEE;border-radius:8px;padding:8px 10px;border-left:3px solid #B71C1C">
+                  <div style="font-size:10px;color:#888">ÚLTIMA · ${new Date(last.fecha).toLocaleDateString("es-ES")}</div>
+                  <div style="font-size:22px;font-weight:800;color:#B71C1C;line-height:1">${last.total}</div>
+                  <div style="font-size:10px;color:${interp.color};font-weight:700">${interp.nivel}</div>
+                </div>
+                ${prev ? `<div style="flex:1;background:#f5f5f5;border-radius:8px;padding:8px 10px;border-left:3px solid #ccc">
+                  <div style="font-size:10px;color:#888">ANTERIOR · ${new Date(prev.fecha).toLocaleDateString("es-ES")}</div>
+                  <div style="font-size:22px;font-weight:800;color:#888;line-height:1">${prev.total}</div>
+                  <div style="font-size:10px;color:${sub.interpretacion(prev.total).color};font-weight:700">${sub.interpretacion(prev.total).nivel}</div>
+                </div>` : ""}
+              </div>
+            </div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
+            <thead><tr style="background:#B71C1C">
+              <th style="padding:5px 8px;text-align:left;color:white">Ítem</th>
+              <th style="padding:5px 8px;color:white;text-align:center">Respuesta</th>
+              <th style="padding:5px 8px;color:white;text-align:center">Pts.</th>
+            </tr></thead>
+            <tbody>${itemRows}</tbody>
+            <tfoot><tr style="background:#FFEBEE">
+              <td colspan="2" style="padding:5px 8px;font-weight:700;font-size:12px;color:#B71C1C">PUNTUACIÓN TOTAL</td>
+              <td style="padding:5px 8px;font-weight:800;font-size:14px;color:#B71C1C;text-align:center">${last.total} / ${sub.maxPuntos}</td>
+            </tr></tfoot>
+          </table>
+        </div>`;
+      }
+
+      html += `</div>`;
+      return html;
+    };
+
+    // ── Construir HTML completo ───────────────────────────────────────────────
+    const escalasConDatos = Object.values(escalasData)
+      .filter(esc => (patient.valoraciones?.[esc.id] || []).length > 0);
+
+    const escalasHtml = escalasConDatos.map(esc =>
+      seccionEscala(esc, patient.valoraciones[esc.id])
+    ).join('<div style="page-break-after:always"></div>');
+
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <title>EnfescalSol — ${patient.nombre} · NHC ${patient.nhc}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1A2E1F; background: white; padding: 20px; }
+    h1 { font-size: 20px; color: #007A2E; margin-bottom: 4px; }
+    h2 { font-size: 15px; margin: 16px 0 8px; }
+    .header { border-bottom: 3px solid #007A2E; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .patient-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 20px; }
+    .patient-field { background: #E8F5EC; border-radius: 6px; padding: 8px 10px; }
+    .patient-field label { font-size: 9px; color: #5A7A8A; text-transform: uppercase; display: block; margin-bottom: 2px; }
+    .patient-field span { font-size: 13px; font-weight: 700; color: #1A2E1F; }
+    .resumen-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 11px; }
+    .resumen-table th { background: #007A2E; color: white; padding: 6px 8px; text-align: left; }
+    .resumen-table td { padding: 5px 8px; border-bottom: 1px solid #e0e0e0; }
+    .resumen-table tr:nth-child(even) td { background: #F2F7F3; }
+    .escala-section { margin-bottom: 24px; }
+    .badge { display: inline-flex; flex-direction: column; align-items: center; padding: 4px 8px; border-radius: 6px; min-width: 60px; font-size: 9px; gap: 1px; margin: 2px; }
+    .badge strong { font-size: 13px; }
+    .footer { border-top: 1px solid #ccc; padding-top: 10px; margin-top: 24px; display: flex; justify-content: space-between; font-size: 10px; color: #888; }
+    .firma { margin-top: 30px; border-top: 1px solid #ccc; padding-top: 12px; }
+    .firma-line { margin-bottom: 20px; color: #555; font-size: 11px; }
+    @media print {
+      body { padding: 10px; }
+      @page { margin: 1.5cm; size: A4; }
+      .no-print { display: none; }
+    }
+    .print-btn { position: fixed; top: 12px; right: 12px; background: #007A2E; color: white; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,100,0,0.3); }
+  </style>
+</head>
+<body>
+  <button class="print-btn no-print" onclick="window.print()">🖨️ Imprimir / PDF</button>
+
+  <div class="header">
+    <div>
+      <h1>🌿 EnfescalSol — Informe de Valoraciones</h1>
+      <p style="color:#5A7A8A;font-size:11px">Sistema Sanitario Público de Andalucía · Atención Primaria</p>
+    </div>
+    <div style="text-align:right;font-size:10px;color:#888">
+      <div>Fecha del informe</div>
+      <strong style="font-size:12px;color:#333">${hoy}</strong>
+    </div>
+  </div>
+
+  <div class="patient-grid">
+    <div class="patient-field"><label>Paciente</label><span>${patient.nombre}</span></div>
+    <div class="patient-field"><label>NHC</label><span>${patient.nhc}</span></div>
+    <div class="patient-field"><label>Edad / Sexo</label><span>${edad ? edad + " años" : "—"} · ${patient.sexo || "—"}</span></div>
+    <div class="patient-field" style="grid-column:span 2"><label>Centro de salud</label><span>${patient.centro || "—"}</span></div>
+  </div>
+
+  <h2 style="color:#007A2E;border-bottom:2px solid #007A2E;padding-bottom:5px;margin-bottom:12px">Resumen de todas las escalas</h2>
+  <table class="resumen-table">
+    <thead><tr>
+      <th>Escala</th><th style="text-align:center">Última puntuación</th><th>Interpretación</th><th style="text-align:center">Fecha</th><th style="text-align:center">Registros</th>
+    </tr></thead>
+    <tbody>
+      ${Object.values(escalasData).map((esc, i) => {
+        const vl = patient.valoraciones?.[esc.id] || [];
+        const last = vl[0];
+        const interp = last ? esc.interpretacion(last.total) : null;
+        return `<tr>
+          <td>${esc.icono} ${esc.nombre}</td>
+          <td style="text-align:center;font-weight:700;color:${last ? esc.color : '#999'}">${last ? last.total + " / " + esc.maxPuntos : "Sin valorar"}</td>
+          <td style="color:${interp ? interp.color : '#999'};font-weight:${last ? '600' : '400'}">${interp ? interp.nivel : "—"}</td>
+          <td style="text-align:center;color:#666">${last ? new Date(last.fecha).toLocaleDateString("es-ES") : "—"}</td>
+          <td style="text-align:center;color:#666">${vl.length}</td>
+        </tr>`;
+      }).join("")}
+      ${PIE_DIABETICO.subformularios.map(sub => {
+        const hist = (patient.pieDiabetico || []).filter(e => e.subId === sub.id);
+        const last = hist[0];
+        const interp = last ? sub.interpretacion(last.total) : null;
+        return `<tr style="background:#fff8f8">
+          <td>🦶 ${sub.nombre}</td>
+          <td style="text-align:center;font-weight:700;color:${last ? '#B71C1C' : '#999'}">${last ? last.total + " / " + sub.maxPuntos : "Sin valorar"}</td>
+          <td style="color:${interp ? interp.color : '#999'};font-weight:${last ? '600' : '400'}">${interp ? interp.nivel : "—"}</td>
+          <td style="text-align:center;color:#666">${last ? new Date(last.fecha).toLocaleDateString("es-ES") : "—"}</td>
+          <td style="text-align:center;color:#666">${hist.length}</td>
+        </tr>`;
+      }).join("")}
+    </tbody>
+  </table>
+
+  ${escalasConDatos.length > 0 ? '<div style="page-break-before:always"></div>' : ""}
+  ${escalasHtml}
+  ${seccionPie()}
+
+  <div class="firma">
+    <div class="firma-line">Valoración realizada por: _______________________________________________</div>
+    <div class="firma-line">Firma y sello:</div>
+  </div>
+
+  <div class="footer">
+    <span>EnfescalSol v1.1 · doncelproject · Hospital Universitario Costa del Sol · SSPA</span>
+    <span>${hoy}</span>
+  </div>
+</body>
+</html>`;
+
+    // Abrir en ventana nueva y lanzar impresión
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) { showToast("Permite ventanas emergentes en el navegador", "error"); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    // Esperar a que cargue y lanzar print
+    win.onload = () => { setTimeout(() => win.print(), 400); };
+  };
+
   // ─── EXPORTACIÓN DOCX (compacta — misma lógica que antes) ─────────────────
   const exportarDOCX=async(patient,escalasData)=>{
     if(!window.docx){showToast("Cargando Word...","info");return;}
@@ -1102,4 +1465,14 @@ export default function EnfescalSol(){
       <style>{`
         @media print{.no-print{display:none!important}body{font-size:12px}}
         *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
-        button{-webkit-appe
+        button{-webkit-appearance:none}
+      `}</style>
+      {renderToast()}
+      {view==="home"&&renderHome()}
+      {view==="patients"&&renderPatients()}
+      {view==="patient"&&renderPatient()}
+      {view==="escala"&&renderEscala()}
+      {view==="piediabetico"&&renderPieDiabetico()}
+    </div>
+  );
+}
