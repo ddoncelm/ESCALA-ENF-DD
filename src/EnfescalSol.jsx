@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip } from "recharts";
 
+// ─── VERSIÓN (incrementar para forzar recarga de caché en Safari/iOS) ──────────
+const APP_VERSION = "1.1.0";
+
 // ─── CLAVE DE ACCESO (cambiar desde GitHub) ───────────────────────────────────
 const ACCESS_PASSWORD = "molinero26";
 
@@ -365,31 +368,31 @@ export default function EnfescalSol(){
   const saveValoration=()=>{
     const total=calcTotal(selectedEscala,currentValoration);
     const entry={fecha:todayISO(),respuestas:{...currentValoration},total};
+    let updatedPatient=null;
     setPatients(prev=>prev.map(p=>{
       if(p.id!==selectedPatient.id)return p;
       const vals=p.valoraciones[selectedEscala]||[];
-      return{...p,valoraciones:{...p.valoraciones,[selectedEscala]:[entry,...vals]}};
+      const updated={...p,valoraciones:{...p.valoraciones,[selectedEscala]:[entry,...vals]}};
+      updatedPatient=updated;
+      return updated;
     }));
-    setSelectedPatient(prev=>({...prev,valoraciones:{...prev.valoraciones,[selectedEscala]:[entry,...(prev.valoraciones[selectedEscala]||[])]}}));
+    if(updatedPatient)setSelectedPatient(updatedPatient);
     setCurrentValoration({});setView("patient");showToast("Valoración guardada ✓");
   };
 
   const savePieValoration=(subId,respuestas,sub)=>{
     const total=calcTotalSub(sub,respuestas);
     const entry={fecha:todayISO(),respuestas:{...respuestas},total,subId};
+    let updatedPatient=null;
     setPatients(prev=>prev.map(p=>{
       if(p.id!==selectedPatient.id)return p;
-      const prev2=(p.pieDiabetico||[]);
-      // Añadir al historial de ese subformulario
-      const prevSub=prev2.filter(e=>e.subId===subId);
-      const otherSubs=prev2.filter(e=>e.subId!==subId);
-      return{...p,pieDiabetico:[entry,...prevSub,...otherSubs]};
+      const oldPie=(p.pieDiabetico||[]);
+      const updated={...p,pieDiabetico:[entry,...oldPie.filter(e=>e.subId!==subId),...oldPie.filter(e=>e.subId===subId)]};
+      updatedPatient=updated;
+      return updated;
     }));
-    setSelectedPatient(prev=>({
-      ...prev,
-      pieDiabetico:[entry,...(prev.pieDiabetico||[]).filter(e=>e.subId!==subId),...(prev.pieDiabetico||[]).filter(e=>e.subId===subId)]
-    }));
-    setPieSub(null);setPieRespuestas({});showToast("Valoración pie guardada ✓");
+    if(updatedPatient)setSelectedPatient(updatedPatient);
+    setPieSub(null);setPieRespuestas({});setView("patient");showToast("Valoración pie guardada ✓");
   };
 
   // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────
