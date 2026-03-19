@@ -377,7 +377,9 @@ export default function EnfescalSol(){
       return updated;
     }));
     if(updatedPatient)setSelectedPatient(updatedPatient);
-    setCurrentValoration({});setView("patient");showToast("Valoración guardada ✓");
+    setCurrentValoration({});
+    setTimeout(()=>setView("patient"), 50);
+    showToast("Valoración guardada ✓");
   };
 
   const savePieValoration=(subId,respuestas,sub)=>{
@@ -392,7 +394,11 @@ export default function EnfescalSol(){
       return updated;
     }));
     if(updatedPatient)setSelectedPatient(updatedPatient);
-    setPieSub(null);setPieRespuestas({});setView("patient");showToast("Valoración pie guardada ✓");
+    setPieSub(null);
+    setPieRespuestas({});
+    // Pequeño delay para que Safari procese el batch de state antes de cambiar de vista
+    setTimeout(()=>setView("patient"), 50);
+    showToast("Valoración pie guardada ✓");
   };
 
   // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────
@@ -563,7 +569,9 @@ export default function EnfescalSol(){
   // ─── PATIENT DETAIL ───────────────────────────────────────────────────────
   const renderPatient=()=>{
     if(!selectedPatient)return null;
+    // Siempre leer de patients (fuente de verdad) — evita race condition en Safari
     const p=patients.find(x=>x.id===selectedPatient.id)||selectedPatient;
+    if(!p)return null;
     const edad=p.nacimiento?new Date().getFullYear()-new Date(p.nacimiento).getFullYear():null;
 
     return(
@@ -865,6 +873,7 @@ export default function EnfescalSol(){
     const sub=PIE_DIABETICO.subformularios.find(s=>s.id===pieSub);
     if(!sub)return null;
     const p=patients.find(x=>x.id===selectedPatient.id)||selectedPatient;
+    if(!p)return null;
     const total=calcTotalSub(sub,pieRespuestas);
     const completado=sub.items.every(item=>pieRespuestas[item.id]!==undefined);
     const interp=completado?sub.interpretacion(total):null;
@@ -1093,14 +1102,4 @@ export default function EnfescalSol(){
       <style>{`
         @media print{.no-print{display:none!important}body{font-size:12px}}
         *{-webkit-tap-highlight-color:transparent;box-sizing:border-box}
-        button{-webkit-appearance:none}
-      `}</style>
-      {renderToast()}
-      {view==="home"&&renderHome()}
-      {view==="patients"&&renderPatients()}
-      {view==="patient"&&renderPatient()}
-      {view==="escala"&&renderEscala()}
-      {view==="piediabetico"&&renderPieDiabetico()}
-    </div>
-  );
-}
+        button{-webkit-appe
